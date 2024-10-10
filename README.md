@@ -52,5 +52,23 @@ You can omit generation of SwiftUI debug views by removing `--option generate_vi
 
 ## Using the Generated Package
 
-Add the generated package as well as `matter4swift` as package dependencies to
-your app.
+Add the generated package to your app.
+
+Example usage of a `OnOffCluster` from a generated `AllClusters` package to
+toggle a light on endpoint 1 of a Matter accessory:
+
+    let home: HMHome = ...
+    let controller = MTRDeviceController.sharedController(
+        withID: home.matterControllerID as NSString,
+        xpcConnect: home.matterControllerXPCConnectBlock
+    )
+
+    let accessory: HMAccessory = ...
+    let endpoint: matter4swift.EndpointNo = matter4swift.EndpointNo(1)
+
+    let cluster = AllClusters.OnOff.OnOffCluster(
+        withController: controller,
+        node: accessory.matterNodeID!,
+        endpoint: endpoint
+    )
+    try await cluster.sendToggle()
