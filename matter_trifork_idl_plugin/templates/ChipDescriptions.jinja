@@ -1,0 +1,37 @@
+{#-
+Copyright (c) 2024 Trifork A/S
+
+SPDX-License-Identifier: MIT
+-#}
+{%- include 'templates/ChipHeader.jinja' %}
+import matter4swift_runtime
+
+// Put this in a separate file
+import OSLog
+var defaultLogger = Logger()
+public enum {{swift.base_name}} {}
+
+extension {{swift.base_name}}
+{
+    public static func getClusterDescription(_ cluster:matter4swift.ClusterId) -> String
+    {
+        switch cluster
+        {
+            {% for cluster in clusters -%}
+            case {{swift.base_name}}.{{cluster.name}}.{{cluster.name}}Cluster.code: return {{swift.base_name}}.{{cluster.name}}.{{cluster.name}}Cluster.description
+            {% endfor -%}
+            default: return "\(cluster) Cluster"
+        }
+    }
+
+    public static func getClusterName(_ cluster:matter4swift.ClusterId) -> String
+    {
+        switch cluster
+        {
+            {% for cluster in clusters -%}
+            case {{swift.base_name}}.{{cluster.name}}.{{cluster.name}}Cluster.code: return {{swift.base_name}}.{{cluster.name}}.{{cluster.name}}Cluster.name
+            {% endfor -%}
+            default: return "\(cluster) Cluster"
+        }
+    }
+}

@@ -1,0 +1,307 @@
+{#-
+Copyright (c) 2024 Trifork A/S
+
+SPDX-License-Identifier: MIT
+-#}
+{%- include 'templates/ChipHeader.jinja' %}
+import Matter
+import matter4swift_runtime
+
+{%-  set typeLookup = idl | createLookupContext(cluster) %}
+extension {{swift.base_name}}
+{
+{{ cluster.description|strip_all|wordwrap|indent(width='    /// ', first=True) }}
+    public enum {{cluster.name}}
+    {
+        {%- for enum in cluster.enums %}
+        // {{enum.name}} Enum
+        public enum `{{enum.name}}`:{{enum.base_type|swift_type(typeLookup)}},CustomStringConvertible {
+            {% for entry in enum.entries -%}
+            case {{entry.name}} = {{entry.code}}
+            {% endfor %}
+            init(matterDataValue: matter4swift.MatterDataValue) throws
+            {
+                if let value = matterDataValue.unsignedIntegerValue {
+                    self.init(rawValue:{{enum.base_type|swift_type(typeLookup)}}(value))!
+                } else {
+                    throw matter4swift.DecodingError.missingData
+                }
+            }
+
+            func toMatterDataValue() -> matter4swift.MatterDataValue {
+                return matter4swift.MatterDataValue(unsignedIntegerValue: UInt(self.rawValue))
+            }
+
+            public var description: String {
+                switch(self) {
+                    {%- for entry in enum.entries %}
+                    case .{{entry.name}}: return "{{entry.name}}"
+                    {%- endfor %}
+                }
+            }
+        }
+        {% endfor %}
+        {%- for struct in cluster.structs %}
+        // {{struct.name}} Struct
+        public struct {{struct.name}} {
+            {% for field in struct.fields -%}
+            public let {{field.name}}: {{field|swift_type(typeLookup)}}{% if field|is_nullable %}?{% endif %}
+            {% endfor %}
+            init(matterDataValue: matter4swift.MatterDataValue) throws
+            {
+                {% for field in struct.fields -%}
+                // Field: {{field.name}}
+                if let innerMatterDataValue = matterDataValue.structureValue!.data[{{field.code}}] {
+                    {%- if field.is_list %}
+                    var {{field.name}}:[{{field.data_type|swift_type(typeLookup)}}] = []
+                    try innerMatterDataValue.arrayValue?.data.forEach { (matterItem:matter4swift.MatterDataValue) in
+                        try {{field.name}}.append({{field.data_type|swift_type(typeLookup)}}(matterDataValue: matterItem))
+                    }
+                    self.{{field.name}} = {{field.name}}
+                    {% else %}
+                    self.{{field.name}} = try {{field.data_type|swift_type(typeLookup)}}(matterDataValue:innerMatterDataValue)
+                    {%- endif %}
+                } else {
+                    {% if field|is_nullable -%}
+                    self.{{field.name}} = nil
+                    {% else -%}
+                    throw matter4swift.DecodingError.missingData
+                    {%- endif %}
+                }
+                {%- endfor %}
+            }
+
+            public init({%- for field in struct.fields -%}
+                {{field.name}}:{{field|swift_type(typeLookup)}}{% if field|is_nullable %}? = nil{% endif %}
+                {%- if not loop.last %},{% endif -%}
+                {% endfor -%}
+            ) {
+                {%- for field in struct.fields %}
+                self.{{field.name}} = {{field.name}}
+                {%- endfor %}
+            }
+
+            public func toMatterDataValue() -> matter4swift.MatterDataValue {
+                var data: [Int:matter4swift.MatterDataValue] = [:]
+                {% for field in struct.fields %}
+                // Field: {{field.name}}
+                {%- if field.is_list %}
+                {%- if field|is_nullable %}
+                let {{field.name}}List: [matter4swift.MatterDataValue]? = self.{{field.name}}?.map({ value in
+                    value.toMatterDataValue()
+                })
+                if let {{field.name}}List = {{field.name}}List {
+                    data[{{field.code}}] = matter4swift.MatterDataValue(arrayValue: matter4swift.MatterArray(data: {{field.name}}List))
+                }
+                {%- else %}
+                let {{field.name}}List: [matter4swift.MatterDataValue] = self.{{field.name}}.map({ value in
+                    value.toMatterDataValue()
+                })
+                data[{{field.code}}] = matter4swift.MatterDataValue(arrayValue: matter4swift.MatterArray(data: {{field.name}}List))
+                {%- endif %}
+                {%- else %}
+                {%- if field|is_nullable %}
+                data[{{field.code}}] = self.{{field.name}}?.toMatterDataValue()
+                {%- else %}
+                data[{{field.code}}] = self.{{field.name}}.toMatterDataValue()
+                {%- endif %}
+                {%- endif %}
+                {%- endfor %}
+
+                return matter4swift.MatterDataValue(structureValue: matter4swift.MatterStructure(data:data))
+            }
+        }
+        {% endfor %}
+        {%- for bitmap in cluster.bitmaps %}
+        // {{bitmap.name}} Bitmap
+        public struct {{bitmap.name}}
+        {
+            {%- for entry in bitmap.entries %}
+            public var {{entry.name}}:Bool
+            {%- endfor %}
+
+            init({%- for entry in bitmap.entries -%}
+                {{entry.name}}:Bool = false
+                {%- if not loop.last %},{% endif -%}
+                {% endfor -%}
+            ) {
+                {%- for entry in bitmap.entries %}
+                self.{{entry.name}} = {{entry.name}}
+                {%- endfor %}
+            }
+
+            init(matterDataValue: matter4swift.MatterDataValue) throws {
+                guard let bits:UInt = matterDataValue.unsignedIntegerValue else {
+                    throw matter4swift.DecodingError.missingData
+                }
+                {%- for entry in bitmap.entries %}
+                self.{{entry.name}} = (bits & {{ entry.code }}) != 0
+                {%- endfor %}
+            }
+
+            public func toMatterDataValue() -> matter4swift.MatterDataValue {
+                var bits:UInt = 0
+                {%- for entry in bitmap.entries %}
+                if self.{{entry.name}} {
+                    bits += {{ entry.code }}
+                }
+                {%- endfor %}
+                return matter4swift.MatterDataValue(unsignedIntegerValue: bits)
+            }
+
+            public var description: String {
+                var bits: [String] = []
+                {%- for entry in bitmap.entries %}
+                if self.{{entry.name}} {
+                    bits.append("{{entry.name}}")
+                }
+                {%- endfor %}
+                return bits.joined(separator: ",")
+            }
+        }
+        {% endfor %}
+{{ cluster.description|strip_all|wordwrap|indent(width='        /// ', first=True) }}
+        public class {{cluster.name}}Cluster: matter4swift.Cluster
+        {
+            public static let code:matter4swift.ClusterId = matter4swift.ClusterId({{cluster.code}})
+            public static let name = "{{ cluster.name }}"
+            public static let description = "{{ cluster.description|strip_all }}"
+
+            public init(withController controller:MTRDeviceController, node:matter4swift.NodeId, endpoint: matter4swift.EndpointNo) {
+                super.init(withController: controller, node: node, endpoint: endpoint, cluster: {{cluster.name}}Cluster.code)
+            }
+            {% for command in cluster.commands %}
+            {% if command.output_param != "DefaultSuccess" -%}
+            public func send{{command.name}}({% if command.input_param %}_ param:{{command.input_param}}, {% endif %}timeout:Int? = nil) async throws -> {{command.output_param}} {
+                defaultLogger.info("Invoking {{command.name}}")
+                {% if command.input_param %}
+                let cmdFields = param.toMatterDataValue()
+                {% else %}
+                let cmdFields = matter4swift.MatterDataValue(structureValue: matter4swift.MatterStructure(data: [:]))
+                {% endif %}
+                let response = try await device.invokeCommand(
+                    withEndpointID: self.endpoint as NSNumber,
+                    clusterID: self.cluster as NSNumber,
+                    commandID: {{command.code}},
+                    commandFields: cmdFields.toDictionary(),
+                    timedInvokeTimeout: timeout as? NSNumber,
+                    queue: DispatchQueue.main
+                )
+                let matterResponseValue = try matter4swift.MatterResponseValue(dict:response[0])
+                let commandResponse = try {{command.output_param}}(matterDataValue: matterResponseValue.data!)
+                defaultLogger.info("Response from {{command.name}}: \(String(describing: commandResponse))")
+                return commandResponse
+            }
+            {% else -%}
+            public func send{{command.name}}({% if command.input_param %}_ param:{{command.input_param}}{% endif %}) async throws {
+                defaultLogger.info("Invoking {{command.name}}")
+                {% if command.input_param %}
+                let cmdFields = param.toMatterDataValue()
+                {% else %}
+                let cmdFields = matter4swift.MatterDataValue(structureValue: matter4swift.MatterStructure(data: [:]))
+                {% endif %}
+                try await device.invokeCommand(
+                    withEndpointID: self.endpoint as NSNumber,
+                    clusterID: self.cluster as NSNumber,
+                    commandID: {{command.code}},
+                    commandFields: cmdFields.toDictionary(),
+                    timedInvokeTimeout: nil,
+                    queue: DispatchQueue.main
+                )
+            }
+            {% endif -%}
+            {% endfor -%}
+
+            public func readAll() async throws -> [matter4swift.AttribId:Any] {
+                let values = try await device.readAttributes(
+                    withEndpointID: self.endpoint as NSNumber,
+                    clusterID: self.cluster as NSNumber,
+                    attributeID: nil,
+                    params: nil,
+                    queue: DispatchQueue.global()
+                )
+                var returnValues:[matter4swift.AttribId:Any] = [:]
+                try values.forEach { value in
+                    let responseValue = try matter4swift.MatterResponseValue(dict: value)
+                    if let attributePath = responseValue.path, let data = responseValue.data {
+                        switch attributePath.attribute {
+                            {% for attribute in cluster.attributes -%}
+                            {% if attribute|is_readable -%}
+                            case {{attribute.definition.code}}:
+                                do {
+                                    let returnValue = try decode{{attribute|attribute_name}}(data)
+                                    returnValues[matter4swift.AttribId(truncating:attributePath.attribute)] = returnValue
+                                } catch {
+                                    // Ignored
+                                }
+                            {% endif %}
+                            {% endfor %}
+                            default:
+                                break
+                        }
+                    }
+                }
+                return returnValues
+            }
+            {% for attribute in cluster.attributes %}
+            {%- if attribute|is_readable %}
+            public func read{{attribute|attribute_name}}() async throws -> {{attribute.definition|swift_type(typeLookup)}} {
+                let values = try await device.readAttributes(
+                    withEndpointID: self.endpoint as NSNumber,
+                    clusterID: self.cluster as NSNumber,
+                    attributeID: {{attribute.definition.code}},
+                    params: nil,
+                    queue: DispatchQueue.global()
+                )
+                // Only one value is returned
+                if let value = values.first {
+                    let responseValue = try matter4swift.MatterResponseValue(dict: value)
+                    if let data = responseValue.data {
+                        let returnValue = try decode{{attribute|attribute_name}}(data)
+                        return returnValue
+                    }
+                }
+                throw matter4swift.DecodingError.missingData
+            }
+            {% endif %}
+            {%- if attribute|is_writable %}
+            public func write{{attribute|attribute_name}}(_ value:{{attribute.definition|swift_type(typeLookup)}}) async throws {
+                {%- if attribute.definition.is_list %}
+                throw matter4swift.Matter4SwiftError.notYetImplemented(message: "write{{attribute|attribute_name}}")
+                {%- else %}
+                let requestValue = value.toMatterDataValue()
+                try await device.writeAttribute(
+                    withEndpointID: self.endpoint as NSNumber,
+                    clusterID: self.cluster as NSNumber,
+                    attributeID: {{attribute.definition.code}},
+                    value: requestValue.toDictionary(),
+                    timedWriteTimeout: nil,
+                    queue: DispatchQueue.global()
+                )
+                {%- endif %}
+            }
+            {%- endif %}
+            {% endfor %}
+
+            // TODO: events
+
+            // MARK: Private
+            {%- for attribute in cluster.attributes %}
+            {% if attribute|is_readable %}
+            private func decode{{attribute|attribute_name}}(_ data:matter4swift.MatterDataValue) throws -> {{attribute.definition|swift_type(typeLookup)}} {
+                {%- if attribute.definition.is_list %}
+                var returnValue:{{attribute.definition|swift_type(typeLookup)}} = []
+                try data.arrayValue!.data.forEach { (responseItem:matter4swift.MatterDataValue) in
+                    let returnItem = try {{attribute.definition.data_type|swift_type(typeLookup)}}(matterDataValue:responseItem)
+                    returnValue.append(returnItem)
+                }
+                return returnValue
+                {%- else %}
+                return try {{attribute.definition|swift_type(typeLookup)}}(matterDataValue:data)
+                {%- endif %}
+            }
+            {%- endif -%}
+            {%- endfor %}
+        }
+    }
+}

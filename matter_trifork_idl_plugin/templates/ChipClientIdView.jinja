@@ -1,0 +1,33 @@
+{#-
+Copyright (c) 2024 Trifork A/S
+
+SPDX-License-Identifier: MIT
+-#}
+{%- include 'templates/ChipHeader.jinja' %}
+import SwiftUI
+import matter4swift_runtime
+import HomeKit
+import Matter
+
+
+extension {{swift.base_name}}
+{
+    struct ClusterIdView: View {
+        @State var controller: MTRDeviceController
+        @State var accessory:HMAccessory
+        @State var cluster:matter4swift.ClusterId
+        @State var endpoint:matter4swift.EndpointNo
+        
+        var body: some View {
+            switch cluster {
+            {% for cluster in clusters -%}
+            case {{swift.base_name}}.{{cluster.name}}.{{cluster.name}}Cluster.code:
+                NavigationLink("\({{swift.base_name}}.getClusterName(cluster))") {
+                    {{swift.base_name}}.{{cluster.name}}.{{cluster.name}}ClusterView(controller: controller, accessory: accessory, endpoint: endpoint)
+                }
+            {% endfor %}
+            default: Text("\({{swift.base_name}}.getClusterName(cluster)) Cluster")
+            }
+        }
+    }
+}

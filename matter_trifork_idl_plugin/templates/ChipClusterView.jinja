@@ -1,0 +1,379 @@
+{#-
+Copyright (c) 2024 Trifork A/S
+
+SPDX-License-Identifier: MIT
+-#}
+{%- include 'templates/ChipHeader.jinja' %}
+{%-  set typeLookup = idl | createLookupContext(cluster) -%}
+
+import Matter
+import SwiftUI
+import HomeKit
+import matter4swift_runtime
+
+extension {{swift.base_name}}.{{cluster.name}}
+{
+    {%- for enum in cluster.enums %}
+    /// View for selecting a {{enum.name}} enum value
+    public struct {{enum.name}}InputView: View {
+        @Binding var field:{{enum.name}}?
+
+        public var body: some View {
+            Picker("{{enum.name}}", selection: $field) {
+                Text("Please select").tag(nil as {{enum.name}}?)
+                {%- for entry in enum.entries %}
+                Text("{{entry.name}}").tag({{enum.name}}.{{entry.name}} as {{enum.name}}?)
+                {%- endfor %}
+            }.labelsHidden()
+        }
+    }
+    {% endfor %}
+    {%- for bitmap in cluster.bitmaps %}
+    /// View for entering a {{bitmap.name}} bitmap value
+    public struct {{bitmap.name}}InputView: View {
+        @Binding var field: {{bitmap.name}}
+
+        public var body: some View {
+            {%- for entry in bitmap.entries %}
+            Toggle("{{entry.name}}", isOn: $field.{{entry.name}})
+            {% endfor %}
+        }
+    }
+    {% endfor %}
+    {%- for struct in cluster.structs %}
+    // View for entering a {{struct.name}} struct value
+    public struct {{struct.name}}InputView: View {
+        @Binding var field:{{struct.name}}
+
+        public var body: some View {
+            return VStack {
+                /* TODO
+                {%- for field in struct.fields %}
+                {{field.data_type|swift_type(typeLookup)}}InputView(field:$field.{{field.name}})
+                {%- endfor %}
+                */
+                Text("Not Yet Implemented: {{struct.name}}InputView")
+            }
+        }
+    }
+    {% endfor %}
+
+    {% for struct in cluster.structs -%}
+    // View for showing a {{struct.name}}
+    public struct {{struct.name}}View: View {
+        @State var item:{{struct.name}}
+
+        public var body: some View {
+            return VStack {
+                {%- for field in struct.fields %}
+                {%- if field|is_struct(typeLookup) %}
+                ZStack {
+                    HStack {
+                        Text("targets").bold()
+                        Spacer()
+                    }
+                    HStack {
+                        Spacer()
+                        VStack {
+                            {%- if field.is_nullable %}
+                            if let value = item.{{field.name}} {
+                                {%- if field.is_list %}
+                                matter4swift.ForEachOrEmpty(Array(value.enumerated()), id: \.offset) { (index:Int,item) in
+                                    {{field.data_type.name}}View(item:item)
+                                } empty: {
+                                    Text("Empty")
+                                }
+                                {%- else %}
+                                {{field.data_type.name}}View(item:value)
+                                {%- endif %}
+                            }
+                            {%- else %}
+                            {%- if field.is_list %}
+                            matter4swift.StaticDeviceItemView(name: "{{field.name}}", value: "\(item.{{field.name}}.description)")
+                            {%- else %}
+                            {{field.data_type.name}}View(item:item.{{field.name}})
+                            {%- endif %}
+                            {%- endif %}
+                        }
+                    }
+                }
+                {%- else %}
+                {%- if field|is_nullable %}
+                if let value = item.{{field.name}} {
+                    matter4swift.StaticDeviceItemView(name: "{{field.name}}", value: "\(value.description)")
+                }
+                {%- else %}
+                matter4swift.StaticDeviceItemView(name: "{{field.name}}", value: "\(item.{{field.name}}.description)")
+                {%- endif %}
+                {%- endif %}
+                {%- if not loop.last %}
+                Divider()
+                {%- endif %}
+                {%- endfor %}
+            }
+        }
+    }
+
+    {% endfor -%}
+    
+    {% for command in cluster.commands -%}
+    /// View for invoking the {{command.name}} command
+    {% set input_fields = command.input_param|struct_fields_by_name(typeLookup) -%}
+    {% if command.output_param != "DefaultSuccess" -%}
+    {% set command_response_type = command.output_param %}
+    {% else %}
+    {% set command_response_type = 'Void' %}
+    {% endif %}
+    public struct {{command.name}}CommandView: View {
+        @State var isPresentingAlert: Bool = false
+        @State var alertMessage: String?
+
+        /// Function that will be called when user hits button to invoke the command.
+        {% if command.input_param -%}
+        var invoker: (_ inputParam:{{ command.input_param}}) async throws -> {{command_response_type}}
+        {% else -%}
+        var invoker: () async throws -> {{command_response_type}}
+        {% endif %}
+        {% if command.input_param -%}
+        // Input parameters for the command
+        {% for field in input_fields -%}
+        {%- if field.is_list -%}
+        @State var {{field.name}}: [{{field.data_type|swift_type(typeLookup)}}]?
+        {%- else -%}
+        {%- if field|is_bitmap(typeLookup) %}
+        @State var {{field.name}} = {{field|swift_type(typeLookup)}}()
+        {%- else %}
+        @State var {{field.name}}: {{field|swift_type(typeLookup)}}?
+        {%- endif %}
+        {%- endif %}
+        {% endfor -%}
+        {%- endif %}
+        {% if command.output_param != "DefaultSuccess" -%}
+        /// Command response
+        @State var commandResponse: {{command.output_param}}?
+        {% endif %}
+        public var body: some View {
+            return List {
+                {%- if command.input_param %}
+                {%- for field in input_fields %}
+                Section("{{field.name}}") {
+                    {%- if field|is_struct(typeLookup) %}
+                    // // TODO[pdr] Edit struct {{field.name}} of type {{field.data_type|swift_type(typeLookup)}}
+                    {%- elif field.is_list %}
+                    // TODO[pdr] Edit list
+                    {%- else %}
+                    {{field|swift_ui_view_type(typeLookup)}}(field:${{field.name}})
+                    {%- endif %}
+                }
+                {% endfor %}
+                {%- endif %}
+                {%- if command.output_param != "DefaultSuccess" %}
+                Section("Command Response") {
+                    if let commandResponse = self.commandResponse {
+                        Text("\(commandResponse)")
+                    } else {
+                        Text("Command Response")
+                    }
+                }
+                {%- endif %}
+                Section {
+                    Button{
+                        self.invoke()
+                    } label:
+                    { Text("{{command.name}}")
+                            .frame( maxWidth: .infinity, alignment: .center)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .alert(isPresented: $isPresentingAlert, content: {
+                Alert(title: Text("Error"), message: Text(alertMessage ?? "Unknown Error"))
+            })
+            .navigationTitle("{{command.name}} Command")
+        }
+        
+        public func invoke() {
+            {%- if command.input_param %}
+            {%- for field in input_fields %}
+            {%- if not field|is_bitmap(typeLookup) %}
+            guard let {{field.name}} = self.{{field.name}} else {
+                self.alertMessage = "Missing value for {{field.name}}"
+                self.isPresentingAlert = true
+                return
+            }
+            {%- endif %}
+            {%- endfor %}
+            {%- endif %}
+            Task {
+                do {
+                    {%- if command.input_param %}
+                    {% if command.output_param != "DefaultSuccess" -%}self.commandResponse = {% endif -%}
+                    try await self.invoker({{command.input_param}}(
+                        {%- for field in input_fields %}
+                        {{field.name}}: {{field.name}}
+                        {%- if not loop.last %},{% endif %}
+                        {%- endfor %}
+                    ))
+                    {%- else %}
+                    {%- if command.output_param != "DefaultSuccess" %}self.commandResponse = {% endif -%}
+                    try await self.invoker();
+                    {%- endif %}
+                } catch {
+                    defaultLogger.error("\(error)")
+                }
+            }
+        }
+    }
+
+    {% endfor -%}
+
+
+    public struct {{cluster.name}}ClusterView: View
+    {
+        let controller: MTRDeviceController
+        let accessory: HMAccessory
+        let endpoint: matter4swift.EndpointNo
+        
+        @State var isLoaded:Bool = false
+        @State var isLoading:Bool = false
+        @State var showError = false
+        @State var error:String = ""
+
+        {% for attribute in cluster.attributes %}
+        {%- if attribute|is_readable -%}
+        @State var `{{attribute.definition.name}}`:{{attribute.definition|swift_type(typeLookup)}}{% if attribute.definition.is_list %} = []{% else %}? = nil{%- endif %}
+        {% endif -%}
+        {% endfor %}
+
+        public init(controller: MTRDeviceController, accessory: HMAccessory, endpoint: matter4swift.EndpointNo) {
+            self.controller = controller
+            self.accessory = accessory
+            self.endpoint = endpoint
+        }
+
+        public var body: some View {
+            return List {
+                {%- for attribute in cluster.attributes %}
+                {%- if attribute.definition.is_list %}
+                Section("{{attribute|attribute_name}}") {
+                    matter4swift.ForEachOrEmpty(Array(self.{{attribute.definition.name}}.enumerated()), id: \.offset) { (index:Int,item:{{attribute.definition.data_type|swift_type(typeLookup)}}) in
+                        {%- if attribute.definition.name == 'serverList' %}
+                        {{swift.base_name}}.ClusterIdView(controller: self.controller, accessory: self.accessory, cluster: item, endpoint: self.endpoint)
+                        {%- elif attribute.definition.name == 'partsList' %}
+                        NavigationLink("Endpoint \(item)") {
+                            {{swift.base_name}}.Descriptor.DescriptorClusterView(controller: self.controller, accessory: self.accessory, endpoint: item)
+                        }
+                        {% elif attribute.definition|is_struct(typeLookup) %}
+                        {{attribute.definition.data_type.name}}View(item: item)
+                        {% else %}
+                        Text("\(item.description)")
+                        {% endif -%}
+                    } empty: {
+                        Text("{{attribute|attribute_name}} is empty")
+                    }
+                }
+                {%- else %}
+                {%- if attribute.definition.data_type.name == 'boolean' %}
+                if let value = self.{{attribute.definition.name}} {
+                    let str = value ? "true" : "false"
+                    matter4swift.StaticDeviceItemView(name:"{{attribute|attribute_name}}", value:"\(str)")
+                }
+                {%- elif attribute.definition|is_struct(typeLookup) %}
+                if let value = self.{{attribute.definition.name}} {
+                    Section("{{attribute|attribute_name}}") {
+                        {{attribute.definition.data_type.name}}View(item:value)
+                    }
+                }
+                {%- else %}
+                if let value = self.{{attribute.definition.name}} {
+                    matter4swift.StaticDeviceItemView(name:"{{attribute|attribute_name}}", value:"\(value.description)")
+                }
+                {%- endif %}
+                {%- endif %}
+                {%- if attribute|is_readable %}
+                {%- endif %}
+                {% endfor %}
+                Section("Commands") {
+                    {%- for command in cluster.commands %}
+                    NavigationLink("{{command.name}}") {
+                        {{command.name}}CommandView(invoker:send{{command.name}})
+                    }
+                    {%- endfor %}
+                }
+            }
+            .disabled(isLoading)
+            .overlay() {
+                if isLoading {
+                    matter4swift.PleaseWaitView()
+                }
+            }
+            .alert("Error", isPresented: $showError, actions: {
+                Text("Dismiss")
+            }, message: {
+                Text(error)
+            })
+            .task {
+                if !isLoaded {
+                    await load()
+                    isLoaded = true
+                }
+            }
+            .navigationTitle("\({{swift.base_name}}.{{cluster.name}}.{{cluster.name}}Cluster.name) (\(endpoint)) Cluster")
+            .refreshable {
+                await load()
+            }
+        }
+
+        @MainActor
+        func load() async
+        {
+            isLoading = true
+            let cluster = {{swift.base_name}}.{{cluster.name}}.{{cluster.name}}Cluster(withController: controller, node: accessory.matterNodeID!, endpoint: endpoint)
+            do {
+                let values:[matter4swift.AttribId:Any] = try await cluster.readAll()
+                values.forEach { (attribute,value) in
+                    switch attribute {
+                        {%- for attribute in cluster.attributes %}
+                        {%- if attribute|is_readable %}
+                        case {{attribute.definition.code}}:
+                            if let value = value as? {{attribute.definition|swift_type(typeLookup)}} {
+                                self.{{attribute.definition.name}} = value
+                            }
+                        {%- endif %}
+                        {%- endfor %}
+                        default:
+                            break
+                    }
+                }
+            } catch {
+                defaultLogger.error("\(error)")
+            }
+            isLoading = false
+        }
+
+        {%- for command in cluster.commands %}
+        {%- if command.input_param %}
+
+        @MainActor
+        func send{{command.name}}(_ inputParam:{{command.input_param}}) async throws -> {{ command|response_type(typeLookup)}}
+        {
+            isLoading = true
+            let cluster = {{swift.base_name}}.{{cluster.name}}.{{cluster.name}}Cluster(withController: controller, node: accessory.matterNodeID!, endpoint: endpoint)
+            let response:{{ command|response_type(typeLookup)}} = try await cluster.send{{command.name}}(inputParam)
+            isLoading = false
+            return response
+        }
+        {%- else %}
+        func send{{command.name}}() async throws -> {{ command|response_type(typeLookup)}}
+        {
+            isLoading = true
+            let cluster = {{swift.base_name}}.{{cluster.name}}.{{cluster.name}}Cluster(withController: controller, node: accessory.matterNodeID!, endpoint: endpoint)
+            let response:{{ command|response_type(typeLookup)}} = try await cluster.send{{command.name}}()
+            isLoading = false
+            return response
+        }
+        {%- endif %}
+        {%- endfor %}
+    }
+}
