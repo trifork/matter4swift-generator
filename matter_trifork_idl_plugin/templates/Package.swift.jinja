@@ -19,8 +19,10 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // TODO[pdr] Point to github when we are ready
-        .package(path: "../../matter4swift-runtime")
+        .package(
+            url: "https://github.com/trifork/matter4swift-runtime.git",
+            from: "1.0.0"
+        )
     ],
     targets: [
         .target(
