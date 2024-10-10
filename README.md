@@ -54,7 +54,7 @@ You can omit generation of SwiftUI debug views by removing `--option generate_vi
 
 Add the generated package to your app.
 
-Example usage of a `OnOffCluster` from a generated `AllClusters` package to
+Example usage of an `OnOffCluster` from a generated `AllClusters` package to
 toggle a light on endpoint 1 of a Matter accessory:
 
     let home: HMHome = ...
