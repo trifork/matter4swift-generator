@@ -173,7 +173,7 @@ def IsWritable(attribute:Attribute):
     return  AttributeQuality.WRITABLE in attribute.qualities
 
 def IsNullable(field:Field) -> bool:
-    return FieldQuality.NULLABLE in field.qualities
+    return FieldQuality.NULLABLE in field.qualities or FieldQuality.OPTIONAL in field.qualities
 
 def IsStruct(field:Field, context: TypeLookupContext) -> bool:
     struct = context.find_struct(field.data_type.name)
@@ -184,7 +184,6 @@ def IsStruct(field:Field, context: TypeLookupContext) -> bool:
 def IsBitmap(field:Field, context: TypeLookupContext) -> bool:
     bitmap = context.find_bitmap(field.data_type.name)
     return bitmap is not None
-
 
 def GetStructFields(field:Field, context: TypeLookupContext):
     struct = context.find_struct(field.name)
