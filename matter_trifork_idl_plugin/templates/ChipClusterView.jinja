@@ -89,9 +89,21 @@ extension {{swift.base_name}}.{{cluster.name}}
                             }
                             {%- else %}
                             {%- if field.is_list %}
+                            {%- if field.is_optional %}
+                            matter4swift.StaticDeviceItemView(name: "{{field.name}}", value: "\(item.{{field.name}}?.description ?? "null")")
+                            {%- else %}
                             matter4swift.StaticDeviceItemView(name: "{{field.name}}", value: "\(item.{{field.name}}.description)")
+                            {%- endif %}
+                            {%- else %}
+                            {%- if field.is_optional %}
+                            if let {{field.name}} = item.{{field.name}} {
+                                {{field.data_type.name}}View(item:{{field.name}})
+                            } else {
+                                matter4swift.StaticDeviceItemView(name: "{{field.name}}", value: "null")
+                            }
                             {%- else %}
                             {{field.data_type.name}}View(item:item.{{field.name}})
+                            {%- endif %}
                             {%- endif %}
                             {%- endif %}
                         }
@@ -158,9 +170,9 @@ extension {{swift.base_name}}.{{cluster.name}}
                 {%- for field in input_fields %}
                 Section("{{field.name}}") {
                     {%- if field|is_struct(typeLookup) %}
-                    // // TODO[pdr] Edit struct {{field.name}} of type {{field.data_type|swift_type(typeLookup)}}
+                    // TODO Edit struct {{field.name}} of type {{field.data_type|swift_type(typeLookup)}}
                     {%- elif field.is_list %}
-                    // TODO[pdr] Edit list
+                    // TODO Edit list {{field.name}} of type {{field.data_type|swift_type(typeLookup)}}
                     {%- else %}
                     {{field|swift_ui_view_type(typeLookup)}}(field:${{field.name}})
                     {%- endif %}
