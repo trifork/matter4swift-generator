@@ -49,6 +49,9 @@ You can omit generation of SwiftUI debug views by removing `--option generate_vi
     --option generate_views:
     Also generates SwiftUI views that are useful for inspecting Matter devices
 
+    --option filter:{all|server_side|binding}:
+    Which clusters to include.
+
 
 ## Using the Generated Package
 

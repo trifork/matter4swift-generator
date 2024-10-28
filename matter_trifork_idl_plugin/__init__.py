@@ -9,7 +9,7 @@ import dataclasses
 from typing import Optional
 
 from matter_idl.generators import CodeGenerator, GeneratorStorage
-from matter_idl.generators.cluster_selection import server_side_clusters
+from matter_idl.generators.cluster_selection import server_side_clusters, binding_clusters
 from matter_idl.generators.type_definitions import (
     BasicInteger,
     BasicString,
@@ -223,6 +223,7 @@ class CustomGenerator(CodeGenerator):
         self.output_directory = pathlib.Path(kwargs['output'])
         self.name = kwargs.get('name', 'TriforkMatters')
         self.generate_views = 'generate_views' in kwargs
+        self.cluster_filter = kwargs.get('filter', 'all')
 
         self.jinja_env.filters['swift_type'] = SwiftType
         self.jinja_env.filters['swift_ui_view_type'] = SwiftUIViewType
@@ -253,7 +254,14 @@ class CustomGenerator(CodeGenerator):
             return str(self.output_directory / pathlib.Path(filename))
 
     def internal_render_all(self):
-        server_clusters = server_side_clusters(self.idl)
+        if self.cluster_filter == 'all':
+            clusters = self.idl.clusters
+        elif self.cluster_filter == 'server_side':
+            clusters = server_side_clusters(self.idl)
+        elif self.cluster_filter == 'binding':
+            clusters = binding_clusters(self.idl)
+        else:
+            raise Exception(f"'{self.cluster_filter}' is not a valid option for '--option filter:{{all|server_side|binding}}'")
 
         # Generate Swift classes for each server cluster.
         cluster_targets = [
@@ -271,7 +279,7 @@ class CustomGenerator(CodeGenerator):
                 ),
             ]
 
-        for cluster in server_clusters:
+        for cluster in clusters:
             for target in cluster_targets:
                 self.internal_render_one_output(
                     template_path=target.template,
@@ -305,7 +313,7 @@ class CustomGenerator(CodeGenerator):
                 template_path=target.template,
                 output_file_name=target.output_name.format(cluster_name=cluster.name),
                 vars={
-                    'clusters': server_clusters,
+                    'clusters': clusters,
                 }
             )
 
@@ -322,6 +330,6 @@ class CustomGenerator(CodeGenerator):
                 output_file_name=target.output_name.format('Package.swift'),
                 vars={
                     'package_name': self.name,
-                    'clusters': server_clusters,
+                    'clusters': clusters,
                 }
             )
