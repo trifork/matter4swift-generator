@@ -105,6 +105,21 @@ _GLOBAL_TYPES = [
     GlobalType("UInt64", "posix_ms"),
 ]
 
+# OPTIONAL_PROPERTIES is a list of struct properties that
+# we want to forcefully declare as optional.
+#
+# The syntax is <Cluster>.<Structure>:<Property>
+#
+# The reason for having this list stems from the fact
+# that there is no way to retrieve Apple's fabricIndex,
+# and the fact that Apple's Matter framework will add
+# its own fabricIndex to binding targets and ACL entries
+# if no fabricIndex is provided when writing these values.
+OPTIONAL_PROPERTIES = {
+    "Binding.TargetStruct:fabricIndex",
+    "AccessControl.AccessControlEntryStruct:fabricIndex"
+}
+
 def _get_idl_type(field: Field|DataType|Struct|str, context: TypeLookupContext) -> (str, bool):
     is_array = False
     if isinstance(field, Field):
@@ -172,7 +187,11 @@ def IsReadable(attribute:Attribute):
 def IsWritable(attribute:Attribute):
     return  AttributeQuality.WRITABLE in attribute.qualities
 
-def IsNullable(field:Field) -> bool:
+def IsNullable(field:Field, cluster:Cluster = None, struct:Struct = None) -> bool:
+    if cluster is not None and struct is not None:
+        full_name = f"{cluster.name}.{struct.name}:{field.name}"
+        if full_name in OPTIONAL_PROPERTIES:
+            return True
     return FieldQuality.NULLABLE in field.qualities or FieldQuality.OPTIONAL in field.qualities
 
 def IsStruct(field:Field, context: TypeLookupContext) -> bool:

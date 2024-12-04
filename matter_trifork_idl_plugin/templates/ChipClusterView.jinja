@@ -110,7 +110,7 @@ extension {{swift.base_name}}.{{cluster.name}}
                     }
                 }
                 {%- else %}
-                {%- if field|is_nullable %}
+                {%- if field|is_nullable(cluster,struct) %}
                 if let value = item.{{field.name}} {
                     matter4swift.StaticDeviceItemView(name: "{{field.name}}", value: "\(value.description)")
                 }
