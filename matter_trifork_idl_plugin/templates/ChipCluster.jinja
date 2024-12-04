@@ -29,7 +29,7 @@ extension {{swift.base_name}}
             }
 
             func toMatterDataValue() -> matter4swift.MatterDataValue {
-                return matter4swift.MatterDataValue(unsignedIntegerValue: UInt(self.rawValue))
+                return matter4swift.MatterDataValue(unsignedIntegerValue: UInt64(self.rawValue))
             }
 
             public var description: String {
@@ -82,7 +82,7 @@ extension {{swift.base_name}}
             }
 
             public func toMatterDataValue() -> matter4swift.MatterDataValue {
-                var data: [Int:matter4swift.MatterDataValue] = [:]
+                var data: [UInt64:matter4swift.MatterDataValue] = [:]
                 {% for field in struct.fields %}
                 // Field: {{field.name}}
                 {%- if field.is_list %}
@@ -131,7 +131,7 @@ extension {{swift.base_name}}
             }
 
             init(matterDataValue: matter4swift.MatterDataValue) throws {
-                guard let bits:UInt = matterDataValue.unsignedIntegerValue else {
+                guard let bits:UInt64 = matterDataValue.unsignedIntegerValue else {
                     throw matter4swift.DecodingError.missingData
                 }
                 {%- for entry in bitmap.entries %}
@@ -140,7 +140,7 @@ extension {{swift.base_name}}
             }
 
             public func toMatterDataValue() -> matter4swift.MatterDataValue {
-                var bits:UInt = 0
+                var bits:UInt64 = 0
                 {%- for entry in bitmap.entries %}
                 if self.{{entry.name}} {
                     bits += {{ entry.code }}
